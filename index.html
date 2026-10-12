@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Evidence Desk — Operator Pages</title>
+<style>
+:root {
+  --bg: #0f1115; --fg: #e8eaed; --card: #1a1d23; --accent: #3b82f6; --accent2: #10b981; --border: #2d3139;
+  --muted: #9aa0a6; --danger: #ef4444;
+}
+[data-theme="light"] {
+  --bg: #f8f9fa; --fg: #1a1d23; --card: #fff; --accent: #2563eb; --accent2: #059669; --border: #e5e7eb;
+  --muted: #6b7280;
+}
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 16px; line-height: 1.5; }
+.container { max-width: 720px; margin: 0 auto; }
+h1 { font-size: 1.75rem; margin: 0 0 8px; }
+.subtitle { color: var(--muted); margin-bottom: 24px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+label { display: block; font-weight: 600; margin: 12px 0 4px; font-size: 0.9rem; }
+input, textarea, select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); font-size: 1rem; }
+textarea { min-height: 80px; resize: vertical; }
+button { background: var(--accent); color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-right: 8px; margin-top: 8px; }
+button.secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+button.success { background: var(--accent2); }
+.jobs { display: flex; flex-direction: column; gap: 8px; }
+.job-item { padding: 12px; background: var(--bg); border-radius: 8px; cursor: pointer; border: 1px solid var(--border); }
+.job-item:hover { border-color: var(--accent); }
+.evidence-list { margin-top: 16px; }
+.evidence-item { background: var(--bg); padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 0.9rem; }
+.hash { font-family: ui-monospace, monospace; font-size: 0.75rem; color: var(--muted); word-break: break-all; }
+.header-row { display: flex; justify-content: space-between; align-items: center; }
+.badge { background: var(--accent); color: white; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; }
+@media print { body { background: white; color: black; } .no-print { display: none; } }
+</style>
+</head>
+<body data-theme="dark">
+<div class="container">
+  <div class="header-row">
+    <div>
+      <h1>Evidence Desk</h1>
+      <p class="subtitle">Local-first job evidence for Operator Pages. Offline. Owned by you.</p>
+    </div>
+    <button class="secondary no-print" onclick="toggleTheme()">Theme</button>
+  </div>
+
+  <div class="card no-print">
+    <h2>Unlock</h2>
+    <input id="license" placeholder="License key (demo: ED-DEMO-149)" style="margin-bottom:8px">
+    <button onclick="checkLicense()">Unlock</button>
+    <span id="license-status"></span>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="card">
+      <h2>New / Edit Job</h2>
+      <label>Job / Quote #</label>
+      <input id="jobId" placeholder="e.g. Q-1042">
+      <label>Client</label>
+      <input id="client" placeholder="Client name">
+      <label>Address / Site</label>
+      <input id="address" placeholder="Job site">
+      <label>Work Description</label>
+      <textarea id="description" placeholder="What was done"></textarea>
+      <label>Notes</label>
+      <textarea id="notes" placeholder="Additional notes, materials, issues"></textarea>
+      <label>Client Acknowledgment</label>
+      <select id="ack">
+        <option value="pending">Pending</option>
+        <option value="signed">Signed on site</option>
+        <option value="verbal">Verbal OK</option>
+        <option value="refused">Refused</option>
+      </select>
+      <label>Photo (optional)</label>
+      <input type="file" id="photo" accept="image/*" capture="environment">
+      <div id="photo-preview"></div>
+      <button onclick="saveJob()">Save Job</button>
+      <button class="secondary" onclick="clearForm()">Clear</button>
+    </div>
+
+    <div class="card">
+      <h2>Jobs on this device <span class="badge" id="job-count">0</span></h2>
+      <div class="jobs" id="jobs-list"></div>
+    </div>
+
+    <div class="card" id="export-card" style="display:none">
+      <h2>Export Evidence Pack</h2>
+      <p>Generates a QuantumGuard CONTRACT-v1 compatible payload. Seal with QuantumGuard CLI or VeriQuote for a verifiable signature.</p>
+      <button class="success" onclick="exportPack()">Generate Pack JSON</button>
+      <pre id="pack-output" class="hash" style="white-space:pre-wrap; max-height:300px; overflow:auto; margin-top:12px"></pre>
+      <button class="secondary" onclick="downloadPack()">Download .json</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let jobs = JSON.parse(localStorage.getItem('ed-jobs') || '[]');
+let currentPhotoHash = null;
+let unlocked = localStorage.getItem('ed-unlocked') === 'true';
+
+function toggleTheme() {
+  const t = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.body.setAttribute('data-theme', t);
+}
+
+function checkLicense() {
+  const key = document.getElementById('license').value.trim();
+  if (key === 'ED-DEMO-149' || key.startsWith('ED-') || key.startsWith('CMD-')) {
+    unlocked = true;
+    localStorage.setItem('ed-unlocked', 'true');
+    document.getElementById('license-status').textContent = ' Unlocked';
+    showApp();
+  } else {
+    document.getElementById('license-status').textContent = ' Invalid key';
+  }
+}
+
+function showApp() {
+  document.getElementById('app').style.display = 'block';
+  renderJobs();
+}
+
+if (unlocked) showApp();
+
+function renderJobs() {
+  const list = document.getElementById('jobs-list');
+  list.innerHTML = '';
+  document.getElementById('job-count').textContent = jobs.length;
+  jobs.slice().reverse().forEach((j, i) => {
+    const div = document.createElement('div');
+    div.className = 'job-item';
+    div.innerHTML = `<strong>${j.jobId || 'Untitled'}</strong> — ${j.client || 'No client'}<br><span class="hash">${j.ts}</span>`;
+    div.onclick = () => loadJob(jobs.length - 1 - i);
+    list.appendChild(div);
+  });
+}
+
+async function hashFile(file) {
+  const buf = await file.arrayBuffer();
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+document.getElementById('photo').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  currentPhotoHash = await hashFile(file);
+  const url = URL.createObjectURL(file);
+  document.getElementById('photo-preview').innerHTML = `<img src="${url}" style="max-width:100%;max-height:200px;border-radius:8px;margin-top:8px"><div class="hash">SHA-256: ${currentPhotoHash}</div>`;
+});
+
+function saveJob() {
+  const job = {
+    jobId: document.getElementById('jobId').value,
+    client: document.getElementById('client').value,
+    address: document.getElementById('address').value,
+    description: document.getElementById('description').value,
+    notes: document.getElementById('notes').value,
+    ack: document.getElementById('ack').value,
+    photoHash: currentPhotoHash,
+    ts: new Date().toISOString()
+  };
+  jobs.push(job);
+  localStorage.setItem('ed-jobs', JSON.stringify(jobs));
+  clearForm();
+  renderJobs();
+  alert('Job saved locally.');
+}
+
+function loadJob(idx) {
+  const j = jobs[idx];
+  document.getElementById('jobId').value = j.jobId || '';
+  document.getElementById('client').value = j.client || '';
+  document.getElementById('address').value = j.address || '';
+  document.getElementById('description').value = j.description || '';
+  document.getElementById('notes').value = j.notes || '';
+  document.getElementById('ack').value = j.ack || 'pending';
+  currentPhotoHash = j.photoHash || null;
+  document.getElementById('export-card').style.display = 'block';
+  window.currentJob = j;
+}
+
+function clearForm() {
+  ['jobId','client','address','description','notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ack').value = 'pending';
+  document.getElementById('photo').value = '';
+  document.getElementById('photo-preview').innerHTML = '';
+  currentPhotoHash = null;
+  document.getElementById('export-card').style.display = 'none';
+}
+
+function exportPack() {
+  if (!window.currentJob) return alert('Load a job first');
+  const payloadObj = {
+    type: 'evidence-desk-v1',
+    ...window.currentJob,
+    generated: new Date().toISOString()
+  };
+  const payloadStr = JSON.stringify(payloadObj);
+  const payloadB64 = btoa(unescape(encodeURIComponent(payloadStr)));
+  const encoder = new TextEncoder();
+  const data = encoder.encode(payloadStr);
+  crypto.subtle.digest('SHA-256', data).then(hashBuf => {
+    const hashHex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    const pack = {
+      version: '1',
+      payload: payloadB64,
+      payload_hash: hashHex,
+      signature: 'TO_BE_SIGNED_WITH_QUANTUMGUARD',
+      public_key: 'YOUR_ED25519_PUBLIC_KEY_HEX',
+      alg: 'ed25519',
+      note: 'Seal this payload with QuantumGuard CLI: qg sign ... or VeriQuote --seal'
+    };
+    document.getElementById('pack-output').textContent = JSON.stringify(pack, null, 2);
+    window.lastPack = pack;
+  });
+}
+
+function downloadPack() {
+  if (!window.lastPack) return;
+  const blob = new Blob([JSON.stringify(window.lastPack, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `evidence-${window.currentJob.jobId || 'pack'}.json`;
+  a.click();
+}
+</script>
+</body>
+</html>
